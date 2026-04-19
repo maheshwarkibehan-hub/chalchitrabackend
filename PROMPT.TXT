@@ -1,0 +1,89 @@
+# MASTER ARCHITECTURE & DEVELOPMENT PROMPT
+## Project: "Chalchitra" (A Pixel-Perfect, Login-Less YouTube Clone)
+
+**Context:** The goal is to build a highly advanced, 1-to-1 visual and functional replica of YouTube using Next.js. This clone must operate entirely in a **Login-Less** environment. This means all user-specific data (History, Subscriptions, Playlists, Settings) MUST be stored client-side (using `localStorage`, `IndexedDB`, or a state manager with persistence like `Zustand`).
+
+Below are the detailed, heavily researched technical specifications to implement every requested feature precisely.
+
+---
+
+### MODULE 1: THE "DOUBLE CLICK" BUG RESOLUTION (UI/UX Interactivity)
+**Background:** Users currently have to double-click elements (video cards, buttons, links) to trigger actions. This is a severe UX anti-pattern typically caused by Next.js `<Link>` mishandling, overlapping hitboxes, or event propagation issues.
+**Implementation Steps:**
+1. **Remove Next.js Link Overlays:** Ensure that `<a>` tags or `<Link>` components wrap the entire clickable component rather than having overlapping absolute `<div>` tags capturing the first click.
+2. **Event Bubbling & Stop Propagation:** For elements that have multiple actions (e.g., clicking a video thumbnail routes to `/watch`, but clicking the channel icon routes to `/channel`), use `e.stopPropagation()` and `e.preventDefault()` on the inner elements.
+3. **Hydration & State Sync:** Ensure buttons aren't disabled on the initial client render due to hydration mismatches. Use `suppressHydrationWarning` if necessary. 
+4. **Touch vs. Mouse Events:** If using custom gesture libraries, ensure `onPointerDown` or `onTouchStart` isn't blocking the native `onClick` event.
+
+---
+
+### MODULE 2: ADVANCED QUALITY SELECTOR (144p to 1080p)
+**Background:** By default, simple YouTube API parsers only extract "pre-muxed" (Audio + Video combined) formats, which typically max out at 360p or 720p. To get 144p, 240p, 480p, and 1080p, we must use YouTube's `adaptiveFormats` (DASH streams).
+**Implementation Steps:**
+1. **DASH Parsing (`lib/innertube.ts` / `lib/parser.ts`):** 
+   - Parse `player_response.streamingData.adaptiveFormats`.
+   - Filter out the video tracks (`mimeType: 'video/mp4'`) and audio tracks (`mimeType: 'audio/mp4'`).
+   - Group the video formats by resolution: `144p`, `240p`, `360p`, `480p`, `720p`, `1080p`.
+2. **Audio/Video Sync System:** Since higher qualities are video-only, the video player must play the audio stream and video stream simultaneously.
+   - You can use standard HTML5 by having `<video id="video-stream">` and `<audio id="audio-stream">`. Sync their `currentTime` whenever play, pause, or seek events occur.
+   - *Better Alternative:* Implement **hls.js** or **dash.js** if you are converting YouTube's DASH manifest to a valid URL base, OR use an intermediate handler in `api/player/route.ts` to combine them.
+3. **Quality UI:** Exact YouTube UI. Gear Icon -> "Quality" -> list the available resolutions. Include "Auto" (which adapts depending on network speed, defaulting to 720p).
+
+---
+
+### MODULE 3: CAPTIONS / SUBTITLES PIPELINE (WebVTT)
+**Background:** Captions not working is due to YouTube serving transcripts as proprietary XML/JSON (TimedText format). The HTML5 `<video>` tag requires a generic `.vtt` (WebVTT) file.
+**Implementation Steps:**
+1. **Fetch Transcript:** In `api/transcript/route.ts`, locate the `captionTracks` in `player_response.captions.playerCaptionsTracklistRenderer`.
+2. **Format Conversion Logic:** 
+   - Fetch the baseUrl of the selected caption track.
+   - Parse the XML (`<text start="2.5" dur="3.1">Hello</text>`).
+   - Convert this into valid WebVTT format:
+     ```vtt
+     WEBVTT
+
+     00:00:02.500 --> 00:00:05.600
+     Hello
+     ```
+3. **Frontend Injection:** Serve this VTT file via a Next.js API route and inject it back into the player component as `<track kind="subtitles" src="/api/transcript?videoId=XYZ&lang=en" label="English" default />`.
+4. **UI Button:** Implement the "CC" button. When clicked, toggle the `track.mode` between `showing` and `hidden`.
+
+---
+
+### MODULE 4: DITTO SIDEBAR CLEANUP (Login-Less Layout)
+**Background:** Unnecessary bloat is visually distracting. YouTube's logged-out, clean interface needs replication.
+**Implementation Steps:**
+1. **To be REMOVED from `Sidebar.tsx` and `MiniSidebar.tsx`:**
+   - Trending, Music, Gaming, News, Sports, Podcasts.
+   - Remove "Settings" from the actual sidebar menu, as it lives in the 3-dot (Header) menu.
+2. **To be RETAINED/ADDED:**
+   - Top Section: Home, Shorts, Subscriptions (Local LocalStorage-based view).
+   - "You" Section: History (Fetched from local storage array), Playlists (Local storage), Watch Later (Local storage).
+3. **Styling (Ditto YouTube):** Use rounded corners (`rounded-xl` / `rounded-lg`) for sidebar active items. Active items have a solid icon and a subtle gray `#f2f2f2` (Light mode) or `#272727` (Dark mode) background.
+
+---
+
+### MODULE 5: LOGIN-LESS SETTINGS PAGE ("Ditto" UI)
+**Background:** Since there are no user accounts, "Settings" must control the browser's view of the site, perfectly identical to YouTube's modal/page architecture.
+**Implementation Steps:**
+1. **Entry Point:** In the Header, create the classic 3-dot vertical menu (or an unauthenticated default user icon) that opens a dropdown containing "Settings", "Appearance", "Language".
+2. **Settings Page Layout (`app/settings/page.tsx`):**
+   - Left Sidebar (Fixed width, internal sub-nav).
+   - Right Pane (Content switches based on left-nav selection).
+3. **Login-Less Setting Categories:**
+   - **General / Account:** "Sign in to manage your channel, subscriptions, etc." (Placeholder CTA to match reality).
+   - **Playback and performance:**
+     - Toggle: "Inline playback" (Play videos on hover in home screen).
+     - Radio options: "AV1 settings" (Auto vs SD).
+     - Subtitles / CC preferences.
+   - **Appearance:** Toggle between Light, Dark, or System Default theme (Using `next-themes`).
+   - **Privacy:** "Clear Search History", "Clear Watch History" (Must map to `localStorage.removeItem('history')`).
+4. **Implementation Framework:** Use an atomic state manager like Zustand to make settings instantly reflect globally without reloading (e.g., toggling AutoPlay should instantly update the player's behavior).
+
+---
+
+## EXECUTION DIRECTIVE:
+When proceeding to write code based on this master prompt:
+- NEVER leave `// ...existing code` blocks; implement functional logic.
+- Ensure all styling strictly maps to YouTube's material-like specs (Roboto font, 16px root font size, specific SVGs over icon fonts, standard Youtube exact hex codes for pure black/white contrasts).
+- Treat `localStorage` as the primary Database. Ensure robust error handling (try/catch blocks around JSON.parse) to prevent app crashes if local data gets corrupted.
