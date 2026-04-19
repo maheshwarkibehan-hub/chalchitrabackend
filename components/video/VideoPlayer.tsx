@@ -263,8 +263,6 @@ export default function VideoPlayer({
     document.exitFullscreen().catch(() => undefined);
   }, []);
 
-  }, []);
-
   useEffect(() => {
     const element = playerRef.current;
     if (!element || !selectedUrl) return;
