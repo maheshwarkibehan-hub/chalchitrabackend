@@ -138,12 +138,52 @@ export default function SettingsPage() {
 
           <label className="space-y-1 text-sm">
             <span className="text-yt-textSecondary">Content language</span>
-            <input
-              type="text"
+            <select
+              className="h-10 w-full rounded-lg border border-yt-border bg-yt-input px-3"
               value={preferences.contentLanguage}
               onChange={(event) => updatePreferences({ contentLanguage: event.target.value })}
+            >
+              <option value="hi">Hindi</option>
+              <option value="en">English</option>
+              <option value="ta">Tamil</option>
+              <option value="te">Telugu</option>
+              <option value="bn">Bengali</option>
+              <option value="mr">Marathi</option>
+              <option value="gu">Gujarati</option>
+              <option value="kn">Kannada</option>
+              <option value="ml">Malayalam</option>
+              <option value="pa">Punjabi</option>
+              <option value="ur">Urdu</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="pt">Portuguese</option>
+              <option value="ru">Russian</option>
+              <option value="ar">Arabic</option>
+            </select>
+          </label>
+
+          <label className="space-y-1 text-sm">
+            <span className="text-yt-textSecondary">Content region</span>
+            <select
               className="h-10 w-full rounded-lg border border-yt-border bg-yt-input px-3"
-            />
+              value={preferences.contentRegion}
+              onChange={(event) => updatePreferences({ contentRegion: event.target.value })}
+            >
+              <option value="IN">India</option>
+              <option value="US">United States</option>
+              <option value="GB">United Kingdom</option>
+              <option value="CA">Canada</option>
+              <option value="AU">Australia</option>
+              <option value="JP">Japan</option>
+              <option value="KR">South Korea</option>
+              <option value="DE">Germany</option>
+              <option value="FR">France</option>
+              <option value="BR">Brazil</option>
+              <option value="AE">UAE</option>
+            </select>
           </label>
 
           <label className="flex items-center justify-between rounded-lg border border-yt-border bg-yt-base px-3 py-2 text-sm">

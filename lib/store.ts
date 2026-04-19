@@ -13,6 +13,7 @@ export type HistoryVideo = {
   watchedAt: string;
   progressPercent: number;
   progressSeconds: number;
+  keywords?: string[];
 };
 
 export type PlaylistVideo = {
@@ -43,16 +44,21 @@ export type Preferences = {
   theme: "dark" | "light" | "system";
   pauseWatchHistory: boolean;
   contentLanguage: string;
+  contentRegion: string;
 };
 
 export type CurrentlyPlaying = {
   videoId: string;
+  title: string;
+  thumbnail: string;
+  streamUrl: string;
   currentTime: number;
   isPlaying: boolean;
   volume: number;
   isMuted: boolean;
   playbackRate: number;
   quality: string;
+  duration?: number;
 };
 
 type AppStore = {
@@ -100,17 +106,22 @@ const defaultPreferences: Preferences = {
   ambientModeEnabled: true,
   theme: "light",
   pauseWatchHistory: false,
-  contentLanguage: "en",
+  contentLanguage: "hi",
+  contentRegion: "IN",
 };
 
 const defaultCurrentlyPlaying: CurrentlyPlaying = {
   videoId: "",
+  title: "",
+  thumbnail: "",
+  streamUrl: "",
   currentTime: 0,
   isPlaying: false,
   volume: 1,
   isMuted: false,
   playbackRate: 1,
   quality: "Auto",
+  duration: 0,
 };
 
 function upsertUniqueById<T extends { videoId: string }>(arr: T[], item: T, max = 200): T[] {

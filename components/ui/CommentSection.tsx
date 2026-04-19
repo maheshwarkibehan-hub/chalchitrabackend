@@ -21,25 +21,44 @@ export default function CommentSection({
   const [comments, setComments] = useState<ParsedComment[]>(initialComments);
   const [continuation, setContinuation] = useState<string | undefined>(initialContinuation);
   const [loading, setLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const [sortType, setSortType] = useState<SortType>("Top Comments");
 
   useEffect(() => {
-    if (comments.length > 0 || !videoId) return;
+    setComments(initialComments);
+    setContinuation(initialContinuation);
+  }, [initialComments, initialContinuation, videoId]);
+
+  useEffect(() => {
+    if (initialComments.length > 0 || !videoId) return;
+
+    let active = true;
 
     async function loadInitial() {
       setLoading(true);
       try {
         const response = await fetch(`/api/comments?videoId=${encodeURIComponent(videoId)}`);
+        if (!response.ok) throw new Error("Failed to load comments from backend.");
         const data = await response.json();
+        if (!active) return;
         setComments(data.comments || []);
         setContinuation(data.continuationToken || undefined);
+        setHasError(false);
+      } catch {
+        if (!active) return;
+        setHasError(true);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
     loadInitial();
-  }, [comments.length, videoId]);
+    return () => {
+      active = false;
+    };
+  }, [initialComments.length, videoId]);
 
   async function loadMoreComments() {
     if (!continuation || loading) return;
@@ -73,7 +92,22 @@ export default function CommentSection({
       </div>
 
       <div className="space-y-4">
-        {displayed.map((comment) => (
+        {loading && comments.length === 0 && (
+          <div className="animate-pulse space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex gap-3">
+                <div className="h-10 w-10 rounded-full bg-yt-chip" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-1/4 rounded bg-yt-chip" />
+                  <div className="h-4 w-3/4 rounded bg-yt-chip" />
+                  <div className="h-4 w-1/2 rounded bg-yt-chip" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && displayed.map((comment) => (
           <article key={comment.commentId} className="flex gap-3">
             <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full">
               <Image
@@ -114,7 +148,7 @@ export default function CommentSection({
 
         {!loading && displayed.length === 0 && (
           <div className="rounded-ytMenu border border-yt-border bg-yt-elevated px-4 py-3 text-sm text-yt-textSecondary">
-            Is video par comments available nahi hain ya abhi load nahi ho pa rahe.
+            {hasError ? "Failed to load comments. Please try again later." : "Is video par comments available nahi hain."}
           </div>
         )}
       </div>

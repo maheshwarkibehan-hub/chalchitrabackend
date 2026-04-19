@@ -41,19 +41,37 @@ function SearchPageContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("relevance");
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+  const queryRef = useRef(q);
 
-  const runSearch = useCallback(async (reset = false) => {
-    if (!q || loading) return;
+  useEffect(() => {
+    queryRef.current = q;
+  }, [q]);
+
+  const runSearch = useCallback(async (reset = false, query = q) => {
+    if (!query) return;
+    if (!reset && loading) return;
+
+    const requestId = ++requestIdRef.current;
+    const queryAtRequestStart = query;
+
     setLoading(true);
 
     try {
-      const result = await source.search(q, reset ? undefined : continuation);
+      const result = await source.search(queryAtRequestStart, reset ? undefined : continuation);
+
+      if (requestId !== requestIdRef.current || queryAtRequestStart !== queryRef.current) {
+        return;
+      }
+
       setVideos((prev) => dedupeById(reset ? result.videos : [...prev, ...result.videos]));
       setChannels((prev) => dedupeById(reset ? result.channels : [...prev, ...result.channels]));
       setPlaylists((prev) => dedupeById(reset ? result.playlists : [...prev, ...result.playlists]));
       setContinuation(result.continuationToken);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [continuation, loading, q, source]);
 
@@ -62,7 +80,12 @@ function SearchPageContent() {
     setVideos([]);
     setChannels([]);
     setPlaylists([]);
-    runSearch(true);
+    if (!q) {
+      setLoading(false);
+      return;
+    }
+
+    runSearch(true, q);
     // runSearch intentionally depends on pagination/loading internals; query change should trigger reset only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);

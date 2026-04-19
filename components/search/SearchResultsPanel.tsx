@@ -98,11 +98,18 @@ function VideoResult({ video }: { video: ParsedVideo }) {
 }
 
 export default function SearchResultsPanel({ videos, channels, playlists, showChannels, showPlaylists }: SearchResultsPanelProps) {
-  const topChannel = showChannels ? channels[0] : undefined;
+  const visibleChannels = showChannels ? channels : [];
 
   return (
     <div className="space-y-4">
-      {topChannel && <ChannelResult channel={topChannel} />}
+      {visibleChannels.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-yt-textSecondary">Channels</h2>
+          {visibleChannels.map((channel) => (
+            <ChannelResult key={channel.channelId} channel={channel} />
+          ))}
+        </section>
+      )}
 
       {showPlaylists && playlists.length > 0 && (
         <section className="space-y-2">

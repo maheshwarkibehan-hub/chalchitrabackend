@@ -105,9 +105,18 @@ body {
   }
 
   .shimmer {
-    background: linear-gradient(90deg, #f2f2f2 25%, #e6e6e6 50%, #f2f2f2 75%);
+    background: linear-gradient(90deg, var(--yt-bg-hover) 25%, var(--yt-bg-elevated) 50%, var(--yt-bg-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s linear infinite;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 
@@ -118,4 +127,19 @@ body {
   100% {
     background-position: -200% 0;
   }
+}
+
+@keyframes cardFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-card-in {
+  animation: cardFadeIn 0.3s ease-out both;
 }

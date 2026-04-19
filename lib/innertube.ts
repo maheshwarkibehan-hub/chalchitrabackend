@@ -16,32 +16,69 @@ import {
 const INNERTUBE_BASE_URL = "https://www.youtube.com/youtubei/v1";
 const INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
-const WEB_CLIENT_CONTEXT = {
-  client: {
-    clientName: "WEB",
-    clientVersion: "2.20240101.00.00",
-    hl: "en",
-    gl: "IN",
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    clientFormFactor: "UNKNOWN_FORM_FACTOR",
-  },
-};
+/**
+ * Read the user's preferred content language and region.
+ * Falls back to sensible defaults when running server-side or
+ * before the persisted store has been hydrated.
+ */
+function getUserLocale(): { hl: string; gl: string } {
+  if (typeof window === "undefined") {
+    return { hl: "hi", gl: "IN" };
+  }
 
-const ANDROID_CLIENT_CONTEXT = {
-  client: {
-    clientName: "ANDROID",
-    clientVersion: "20.10.38",
-    hl: "en",
-    gl: "IN",
-    userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
-    androidSdkVersion: 34,
-  },
-};
+  try {
+    const raw = localStorage.getItem("yt-clone-store");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const prefs = parsed?.state?.preferences;
+      return {
+        hl: prefs?.contentLanguage || "hi",
+        gl: prefs?.contentRegion || "IN",
+      };
+    }
+  } catch {
+    // localStorage unavailable or corrupted – use defaults.
+  }
+
+  return { hl: "hi", gl: "IN" };
+}
+
+function getWebClientContext() {
+  const { hl, gl } = getUserLocale();
+  return {
+    client: {
+      clientName: "WEB",
+      clientVersion: "2.20240101.00.00",
+      hl,
+      gl,
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      clientFormFactor: "UNKNOWN_FORM_FACTOR",
+    },
+  };
+}
+
+function getAndroidClientContext() {
+  const { hl, gl } = getUserLocale();
+  return {
+    client: {
+      clientName: "ANDROID",
+      clientVersion: "20.10.38",
+      hl,
+      gl,
+      userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
+      androidSdkVersion: 34,
+    },
+  };
+}
+
+
 
 type InnertubeOptions = {
   signal?: AbortSignal;
   useAndroidClient?: boolean;
+  hl?: string;
+  gl?: string;
 };
 
 type StreamInfo = {
@@ -65,7 +102,10 @@ async function innertubePost<T>(
   body: Record<string, any>,
   options: InnertubeOptions = {},
 ): Promise<T> {
-  const context = options.useAndroidClient ? ANDROID_CLIENT_CONTEXT : WEB_CLIENT_CONTEXT;
+  const context = options.useAndroidClient ? getAndroidClientContext() : getWebClientContext();
+  // Allow callers (e.g. API routes) to override locale
+  if (options.hl) context.client.hl = options.hl;
+  if (options.gl) context.client.gl = options.gl;
   const url = `${INNERTUBE_BASE_URL}/${endpoint}?key=${INNERTUBE_KEY}&prettyPrint=false`;
 
   const response = await fetch(url, {
@@ -274,7 +314,7 @@ export async function getRelatedFromVideo(videoId: string) {
   return data.relatedVideos;
 }
 
-export async function getHomeFeed(continuationToken?: string, params?: string) {
+export async function getHomeFeed(continuationToken?: string, params?: string, hl?: string, gl?: string) {
   const SEARCH_CONTINUATION_PREFIX = "search:";
   const token = continuationToken || "";
 
@@ -289,7 +329,7 @@ export async function getHomeFeed(continuationToken?: string, params?: string) {
       ? continuationToken.slice(SEARCH_CONTINUATION_PREFIX.length)
       : continuationToken;
 
-    const fallbackNext = await searchVideos("trending videos", rawToken);
+    const fallbackNext = await searchVideos("trending India", rawToken);
     return {
       videos: fallbackNext.videos,
       shorts: [],
@@ -306,13 +346,13 @@ export async function getHomeFeed(continuationToken?: string, params?: string) {
         ...(params ? { params } : {}),
       };
 
-  const data = await innertubePost<any>("browse", body);
+  const data = await innertubePost<any>("browse", body, { hl, gl });
   const parsed = parseHomeFeedResponse(data);
 
   // Logged-out/new visitors often receive only feed nudge content with no videos.
   // In that case, fallback to search feed so UI never appears empty.
   if (!parsed.videos.length && !continuationToken) {
-    const fallback = await searchVideos("trending videos");
+    const fallback = await searchVideos("trending India");
     return {
       videos: fallback.videos,
       shorts: fallback.videos
@@ -366,20 +406,72 @@ export async function getPlaylist(playlistId: string, continuationToken?: string
 }
 
 export async function getComments(videoId: string, continuationToken?: string) {
-  const body = continuationToken ? { continuation: continuationToken } : { videoId };
-  const data = await innertubePost<any>("next", body);
-  const parsed = parseCommentsResponse(data);
-
-  if (!continuationToken && parsed.comments.length === 0 && parsed.continuationToken) {
-    const nextData = await innertubePost<any>("next", { continuation: parsed.continuationToken });
-    const nextParsed = parseCommentsResponse(nextData);
-    return {
-      comments: nextParsed.comments,
-      continuationToken: nextParsed.continuationToken || parsed.continuationToken,
-    };
+  // If we already have a continuation token, fetch directly
+  if (continuationToken) {
+    const data = await innertubePost<any>("next", { continuation: continuationToken });
+    return parseCommentsResponse(data);
   }
 
-  return parsed;
+  // Step 1: Fetch next endpoint to get the comment section continuation
+  const nextData = await innertubePost<any>("next", { videoId });
+
+  // Step 2: Look for the comment section continuation in the response
+  // YouTube puts comments in an itemSectionRenderer with a continuation token
+  function findCommentsContinuation(obj: any): string | undefined {
+    if (!obj || typeof obj !== "object") return undefined;
+
+    // Check if this is a continuationItemRenderer with comment-related continuation
+    if (obj.continuationItemRenderer) {
+      const token = obj.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+      if (token) return token;
+      const buttonToken = obj.continuationItemRenderer?.button?.buttonRenderer?.command?.continuationCommand?.token;
+      if (buttonToken) return buttonToken;
+    }
+
+    // Check for sectionIdentifier containing comments
+    if (obj.itemSectionRenderer?.sectionIdentifier === "comment-item-section") {
+      const contents = obj.itemSectionRenderer?.contents;
+      if (Array.isArray(contents)) {
+        for (const item of contents) {
+          const token = item?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token ||
+                        item?.continuationItemRenderer?.button?.buttonRenderer?.command?.continuationCommand?.token;
+          if (token) return token;
+        }
+      }
+    }
+
+    // Recurse through arrays and objects
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const result = findCommentsContinuation(item);
+        if (result) return result;
+      }
+    } else {
+      for (const key of Object.keys(obj)) {
+        // Skip very large irrelevant keys
+        if (key === "videoDetails" || key === "streamingData" || key === "storyboards") continue;
+        const result = findCommentsContinuation(obj[key]);
+        if (result) return result;
+      }
+    }
+
+    return undefined;
+  }
+
+  // Try to parse comments directly from the next response
+  const directParsed = parseCommentsResponse(nextData);
+  if (directParsed.comments.length > 0) {
+    return directParsed;
+  }
+
+  // Find and fetch the continuation for comments
+  const commentsContinuation = findCommentsContinuation(nextData);
+  if (commentsContinuation) {
+    const commentsData = await innertubePost<any>("next", { continuation: commentsContinuation });
+    return parseCommentsResponse(commentsData);
+  }
+
+  return { comments: [], continuationToken: undefined };
 }
 
 export async function getLiveChatReplay(videoId: string, continuation?: string) {

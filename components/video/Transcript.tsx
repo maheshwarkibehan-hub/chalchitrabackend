@@ -16,7 +16,7 @@ type TranscriptProps = {
 
 export default function Transcript({ transcript, currentTime, onSeek }: TranscriptProps) {
   const activeIndex = useMemo(
-    () => transcript.findIndex((segment) => currentTime * 1000 >= segment.startMs),
+    () => transcript.findLastIndex((segment) => currentTime * 1000 >= segment.startMs),
     [currentTime, transcript],
   );
 

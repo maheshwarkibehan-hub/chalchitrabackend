@@ -29,7 +29,11 @@ export default function ShortsFeed({ initialVideoId }: ShortsFeedProps) {
   const source = useMemo(() => getDataSource("auto"), []);
   const [shorts, setShorts] = useState<ParsedShort[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [continuationToken, setContinuationToken] = useState<string | undefined>();
+  const loaderRef = useRef<HTMLDivElement>(null);
 
+  // Initial Load
   useEffect(() => {
     let cancelled = false;
 
@@ -39,10 +43,14 @@ export default function ShortsFeed({ initialVideoId }: ShortsFeedProps) {
       try {
         const feed = await source.home();
         let items = collectShorts(feed.shorts, feed.videos);
+        let currentToken = undefined;
 
-        if (items.length < 10) {
-          const fallback = await source.search("youtube shorts");
+        // Ensure we have at least 15 shorts
+        while (items.length < 15) {
+          const fallback = await source.search("youtube shorts", currentToken);
           items = collectShorts(items, fallback.videos);
+          currentToken = fallback.continuationToken;
+          if (!currentToken) break; // No more results
         }
 
         if (initialVideoId && !items.some((item) => item.videoId === initialVideoId)) {
@@ -54,9 +62,10 @@ export default function ShortsFeed({ initialVideoId }: ShortsFeedProps) {
           }
         }
 
-        const ordered = reorderShorts(items, initialVideoId).slice(0, 24);
+        const ordered = reorderShorts(items, initialVideoId);
         if (!cancelled) {
           setShorts(ordered);
+          setContinuationToken(currentToken);
         }
       } catch {
         if (!cancelled) {
@@ -75,6 +84,47 @@ export default function ShortsFeed({ initialVideoId }: ShortsFeedProps) {
       cancelled = true;
     };
   }, [initialVideoId, source]);
+
+  // Load More (Infinite Scroll)
+  const loadMore = async () => {
+    if (loadingMore || !continuationToken) return;
+    setLoadingMore(true);
+
+    try {
+      const fallback = await source.search("youtube shorts", continuationToken);
+      const newShorts = collectShorts([], fallback.videos);
+      
+      // Filter duplicates
+      const uniqueNewShorts = newShorts.filter(
+        (newShort) => !shorts.some((existingShort) => existingShort.videoId === newShort.videoId)
+      );
+
+      setShorts((prev) => [...prev, ...uniqueNewShorts]);
+      setContinuationToken(fallback.continuationToken);
+    } catch {
+      // Handle error gracefully
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Intersection Observer for infinite scrolling
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loaderRef.current) {
+      observer.observe(loaderRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [loadingMore, continuationToken, shorts]);
 
   return (
     <div className="h-[calc(100dvh-72px)] snap-y snap-mandatory overflow-y-auto">
@@ -99,6 +149,13 @@ export default function ShortsFeed({ initialVideoId }: ShortsFeedProps) {
       {!loading && shorts.length === 0 && (
         <div className="flex h-full items-center justify-center px-4 text-center text-sm text-yt-textSecondary">
           Shorts abhi load nahi hue. Thoda wait karke page reload karo.
+        </div>
+      )}
+
+      {/* Infinite Scroll Loader */}
+      {shorts.length > 0 && continuationToken && (
+        <div ref={loaderRef} className="flex h-32 snap-start items-center justify-center text-sm text-yt-textSecondary">
+          {loadingMore ? "Loading more shorts..." : "Scroll down for more"}
         </div>
       )}
     </div>

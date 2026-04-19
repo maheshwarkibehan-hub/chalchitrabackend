@@ -38,6 +38,14 @@ type PlayerResponse = {
     status?: string;
     reason?: string;
   };
+  raw?: {
+    microformat?: {
+      playerMicroformatRenderer?: {
+        publishDate?: string;
+        uploadDate?: string;
+      };
+    };
+  };
 };
 
 type WatchPageProps = {
@@ -69,8 +77,17 @@ export default function WatchPage({ params }: WatchPageProps) {
   const addToPlaylist = useAppStore((state) => state.addToPlaylist);
 
   useEffect(() => {
+    let active = true;
+
     async function loadWatchData() {
       setLoading(true);
+      setPlayerData(null);
+      setRelatedVideos([]);
+      setChapters([]);
+      setTranscript([]);
+      setComments([]);
+      setCommentsContinuation(undefined);
+
       try {
         const [player, related, chapterResponse, transcriptResponse, commentsResponse, dislikeResponse] = await Promise.all([
           source.player(params.videoId),
@@ -81,6 +98,8 @@ export default function WatchPage({ params }: WatchPageProps) {
           source.dislikeVotes(params.videoId),
         ]);
 
+        if (!active) return;
+
         setPlayerData(player as unknown as PlayerResponse);
         setRelatedVideos(related.relatedVideos || []);
         setChapters(chapterResponse || []);
@@ -89,28 +108,38 @@ export default function WatchPage({ params }: WatchPageProps) {
         setCommentsContinuation(commentsResponse.continuationToken);
         setDislikes(dislikeResponse?.dislikes || 0);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
     loadWatchData();
+    return () => {
+      active = false;
+    };
   }, [params.videoId, source]);
 
   const details = playerData?.videoDetails;
   const hasPlayableStreams = useMemo(() => {
     if (!playerData) return false;
 
-    const hasMuxed = playerData.streamingData.formats.some((stream) => {
+    return playerData.streamingData.formats.some((stream) => {
       const candidate = stream as { url?: string };
       return Boolean(candidate.url);
     });
+  }, [playerData]);
 
-    const hasVideoOnly = playerData.streamingData.videoStreams.some((stream) => {
-      const candidate = stream as { url?: string };
-      return Boolean(candidate.url);
-    });
+  const publishedDateLabel = useMemo(() => {
+    const renderer = playerData?.raw?.microformat?.playerMicroformatRenderer;
+    const publishDate =
+      typeof renderer?.publishDate === "string"
+        ? renderer.publishDate
+        : typeof renderer?.uploadDate === "string"
+          ? renderer.uploadDate
+          : "";
 
-    return hasMuxed || hasVideoOnly;
+    return publishDate ? formatExactDate(publishDate) : "";
   }, [playerData]);
 
   const descriptionParts = useMemo(
@@ -123,6 +152,12 @@ export default function WatchPage({ params }: WatchPageProps) {
     [details?.thumbnail],
   );
 
+  const channelAvatarFallback = useMemo(() => {
+    if (!details) return "https://yt3.ggpht.com/ytc/default-user=s88-c-k-c0x00ffffff-no-rj";
+    const matchingVideo = relatedVideos.find((v) => v.channelName === details.author);
+    return matchingVideo?.channelAvatar || "https://yt3.ggpht.com/ytc/default-user=s88-c-k-c0x00ffffff-no-rj";
+  }, [details, relatedVideos]);
+
   function handleShare() {
     const url = `${window.location.origin}/watch/${params.videoId}`;
     navigator.clipboard.writeText(url).catch(() => undefined);
@@ -134,10 +169,12 @@ export default function WatchPage({ params }: WatchPageProps) {
 
     if (localPlaylists.length === 0) {
       createLocalPlaylist("Favorites");
-      return;
     }
 
-    addToPlaylist(localPlaylists[0].id, {
+    const targetPlaylist = useAppStore.getState().localPlaylists[0];
+    if (!targetPlaylist) return;
+
+    addToPlaylist(targetPlaylist.id, {
       videoId: params.videoId,
       title: detailsSafe.title,
       channelName: detailsSafe.author,
@@ -149,7 +186,44 @@ export default function WatchPage({ params }: WatchPageProps) {
   return (
     <div>
       {loading || !details ? (
-        <p className="text-sm text-yt-textSecondary">Loading video...</p>
+        <div className="grid gap-6 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(400px,4fr)]">
+          <div className="space-y-4">
+            {/* Video player skeleton */}
+            <div className="aspect-video w-full animate-pulse rounded-xl shimmer" />
+            {/* Title skeleton */}
+            <div className="space-y-3">
+              <div className="h-6 w-3/4 rounded shimmer" />
+              <div className="h-4 w-1/3 rounded shimmer" />
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full shimmer" />
+                <div className="space-y-2 flex-1">
+                  <div className="h-4 w-1/4 rounded shimmer" />
+                  <div className="h-3 w-1/6 rounded shimmer" />
+                </div>
+                <div className="h-9 w-28 rounded-full shimmer" />
+              </div>
+              <div className="flex gap-2">
+                <div className="h-9 w-24 rounded-full shimmer" />
+                <div className="h-9 w-20 rounded-full shimmer" />
+                <div className="h-9 w-24 rounded-full shimmer" />
+              </div>
+            </div>
+          </div>
+          {/* Related videos skeleton */}
+          <aside className="space-y-3">
+            <div className="h-5 w-32 rounded shimmer" />
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex gap-2">
+                <div className="aspect-video w-40 rounded-lg shimmer" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-full rounded shimmer" />
+                  <div className="h-3 w-2/3 rounded shimmer" />
+                  <div className="h-3 w-1/2 rounded shimmer" />
+                </div>
+              </div>
+            ))}
+          </aside>
+        </div>
       ) : (
         <div className={`grid gap-6 ${theaterMode ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(400px,4fr)]"}`}>
           <div className="space-y-4">
@@ -159,8 +233,8 @@ export default function WatchPage({ params }: WatchPageProps) {
                 title={details.title}
                 poster={detailsThumbnail || `https://i.ytimg.com/vi/${params.videoId}/hq720.jpg`}
                 muxedFormats={playerData.streamingData.formats || []}
-                videoStreams={playerData.streamingData.videoStreams || []}
-                audioStreams={playerData.streamingData.audioStreams || []}
+                channelName={details.author}
+                keywords={details.keywords}
                 relatedVideos={relatedVideos}
                 chapters={chapters}
                 transcript={transcript}
@@ -202,14 +276,15 @@ export default function WatchPage({ params }: WatchPageProps) {
             <section className="space-y-3">
               <h1 className="text-[20px] font-medium text-yt-textPrimary">{details.title}</h1>
               <p className="text-sm text-yt-textSecondary">
-                {formatViewCount(details.viewCount)} • {formatExactDate(new Date())}
+                {formatViewCount(details.viewCount)}
+                {publishedDateLabel ? ` • ${publishedDateLabel}` : ""}
               </p>
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="relative h-10 w-10 overflow-hidden rounded-full border border-yt-border">
                     <Image
-                      src={detailsThumbnail || `https://i.ytimg.com/vi/${params.videoId}/hq720.jpg`}
+                      src={channelAvatarFallback}
                       alt={details.author}
                       fill
                       sizes="40px"
@@ -245,7 +320,7 @@ export default function WatchPage({ params }: WatchPageProps) {
                       }
                     >
                       <ThumbsUp className="h-4 w-4" />
-                      {formatCount(details.viewCount / 30)}
+                      {formatCount((details as unknown as { likes?: number }).likes ?? Math.floor(details.viewCount / 30))}
                     </button>
                     <span className="h-5 w-px bg-yt-border" />
                     <span className="inline-flex items-center gap-2 px-3">
@@ -356,6 +431,7 @@ export default function WatchPage({ params }: WatchPageProps) {
 
               <Transcript transcript={transcript} currentTime={currentTime} onSeek={(seconds) => setSeekTo(seconds)} />
               <CommentSection
+                key={params.videoId}
                 videoId={params.videoId}
                 initialComments={comments}
                 initialContinuation={commentsContinuation}
@@ -385,7 +461,7 @@ export default function WatchPage({ params }: WatchPageProps) {
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm text-yt-textPrimary">{video.title}</p>
                     <p className="text-xs text-yt-textSecondary">{video.channelName}</p>
-                    <p className="text-xs text-yt-textSecondary">{video.viewCount}</p>
+                    <p className="text-xs text-yt-textSecondary">{formatViewCount(video.viewCountNumber || video.viewCount)}</p>
                   </div>
                 </Link>
               ))}

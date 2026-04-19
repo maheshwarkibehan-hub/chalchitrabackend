@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
 import MiniPlayer from "@/components/video/MiniPlayer";
+import TopLoadingBar from "@/components/ui/TopLoadingBar";
 import { useAppStore } from "@/lib/store";
 
 type AppShellProps = {
@@ -27,10 +28,11 @@ export default function AppShell({ children }: AppShellProps) {
 
   return (
     <div data-theme={resolvedTheme} className="min-h-screen bg-yt-base text-yt-textPrimary">
+      <TopLoadingBar />
       <Navbar />
       <Sidebar />
       <main className={`pt-16 transition-all duration-200 ${sidebarExpanded ? "lg:ml-[240px]" : "lg:ml-[72px]"}`}>
-        <div className="mx-auto w-full max-w-[2200px] px-3 pb-10 pt-3 md:px-6">{children}</div>
+        <div className="mx-auto w-full max-w-[2200px] px-3 pb-10 pt-3 md:px-6 lg:px-8 2xl:px-12">{children}</div>
       </main>
       <MiniPlayer />
     </div>

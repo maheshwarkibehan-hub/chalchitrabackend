@@ -5,7 +5,8 @@ import { getSponsorSegments } from "@/lib/sponsorblock";
 import { getReturnYouTubeDislike, type ReturnYouTubeDislikeResponse } from "@/lib/returnyoutubedislike";
 
 async function fetchJson<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
-  const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const envBase = process.env.NEXT_PUBLIC_API_URL;
+  const base = envBase || (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000");
   const url = new URL(path, base);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -48,9 +49,24 @@ export const webApiSource: AppDataSource = {
   },
 
   async home(continuationToken, params) {
+    // Read user locale prefs to pass to server-side API
+    let hl: string | undefined;
+    let gl: string | undefined;
+    try {
+      const raw = localStorage.getItem("yt-clone-store");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const prefs = parsed?.state?.preferences;
+        hl = prefs?.contentLanguage;
+        gl = prefs?.contentRegion;
+      }
+    } catch { /* ignore */ }
+
     return fetchJson<HomeResult>("/api/home", {
       continuation: continuationToken,
       params,
+      hl,
+      gl,
     });
   },
 

@@ -22,9 +22,15 @@ export default function SearchBar({ className, initialValue, compact = false }: 
   const [loading, setLoading] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const suggestionRequestIdRef = useRef(0);
   const addSearchHistory = useAppStore((state) => state.addSearchHistory);
   const searchHistory = useAppStore((state) => state.searchHistory);
   const removeSearchHistory = useAppStore((state) => state.removeSearchHistory);
+
+  useEffect(() => {
+    const nextValue = initialValue ?? fromQuery;
+    setQuery((prev) => (prev === nextValue ? prev : nextValue));
+  }, [fromQuery, initialValue]);
 
   useEffect(() => {
     function closeDropdown(event: MouseEvent) {
@@ -40,8 +46,11 @@ export default function SearchBar({ className, initialValue, compact = false }: 
 
   useEffect(() => {
     const normalized = query.trim();
+    const requestId = ++suggestionRequestIdRef.current;
+
     if (!normalized) {
       setSuggestions([]);
+      setLoading(false);
       return;
     }
 
@@ -50,11 +59,15 @@ export default function SearchBar({ className, initialValue, compact = false }: 
       try {
         const res = await fetch(`/api/suggestions?q=${encodeURIComponent(normalized)}`);
         const data = await res.json();
+        if (requestId !== suggestionRequestIdRef.current) return;
         setSuggestions(Array.isArray(data.suggestions) ? data.suggestions.slice(0, 10) : []);
       } catch {
+        if (requestId !== suggestionRequestIdRef.current) return;
         setSuggestions([]);
       } finally {
-        setLoading(false);
+        if (requestId === suggestionRequestIdRef.current) {
+          setLoading(false);
+        }
       }
     }, 300);
 

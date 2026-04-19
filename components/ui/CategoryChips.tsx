@@ -63,7 +63,7 @@ export default function CategoryChips({ categories, active, onChange, className 
                 "h-8 shrink-0 rounded-full px-3 text-sm font-medium transition",
                 activeChip
                   ? "bg-yt-chipSelected text-yt-textChipSelected"
-                  : "bg-yt-chip text-yt-textPrimary hover:bg-[#e7e7e7]",
+                  : "bg-yt-chip text-yt-textPrimary hover:bg-yt-hover",
               )}
             >
               {category}

@@ -302,35 +302,106 @@ function extractMillisFromText(value: string): number {
   return (Number(match[1]) * 60 + Number(match[2])) * 1000;
 }
 
-export function parseCommentRenderer(commentThreadRenderer: AnyRecord): ParsedComment {
-  const comment = commentThreadRenderer.comment?.commentRenderer;
-  return {
-    commentId: comment?.commentId || "",
-    text: getText(comment?.contentText),
-    author: getText(comment?.authorText),
-    authorAvatar: extractThumb(comment?.authorThumbnail)?.[0],
-    likeCount: getText(comment?.voteCount),
-    replyCount: commentThreadRenderer.replies?.commentRepliesRenderer?.moreText
-      ? Number(getText(commentThreadRenderer.replies.commentRepliesRenderer.moreText).replace(/\D/g, "")) || 0
-      : 0,
-    publishedTime: getText(comment?.publishedTimeText),
-  };
+export function parseCommentRenderer(source: AnyRecord): ParsedComment {
+  // Try to locate the actual commentRenderer from various wrapper paths
+  const comment =
+    source.comment?.commentRenderer ||
+    source.commentRenderer ||
+    source;
+
+  // YouTube 2025+ may use commentViewModel
+  const viewModel =
+    source.commentViewModel?.commentViewModel ||
+    source.commentViewModel ||
+    null;
+
+  // Extract with multiple fallback paths
+  const text =
+    getText(comment?.contentText) ||
+    (viewModel ? getText(viewModel?.contentText) || viewModel?.commentContent || "" : "");
+
+  const author =
+    getText(comment?.authorText) ||
+    viewModel?.authorDisplayName ||
+    "";
+
+  const authorAvatar =
+    extractThumb(comment?.authorThumbnail)?.[0] ||
+    viewModel?.authorThumbnailUrl ||
+    "";
+
+  const likeCount =
+    getText(comment?.voteCount) ||
+    viewModel?.likeCount ||
+    "";
+
+  const publishedTime =
+    getText(comment?.publishedTimeText) ||
+    viewModel?.publishedTime ||
+    "";
+
+  const commentId =
+    comment?.commentId ||
+    viewModel?.commentId ||
+    `c-${Math.random().toString(36).slice(2, 8)}`;
+
+  const replyCountRaw = source.replies?.commentRepliesRenderer?.moreText;
+  const replyCount = replyCountRaw
+    ? Number(getText(replyCountRaw).replace(/\D/g, "")) || 0
+    : 0;
+
+  return { commentId, text, author, authorAvatar, likeCount, replyCount, publishedTime };
 }
 
 export function parseCommentsResponse(data: AnyRecord): {
   comments: ParsedComment[];
   continuationToken?: string;
 } {
+  const seen = new Set<string>();
+  const comments: ParsedComment[] = [];
+
+  // Primary: commentThreadRenderer (standard YouTube response)
   const threads = findRenderersByKey(data, "commentThreadRenderer");
-  const comments = threads.map(parseCommentRenderer);
+  for (const thread of threads) {
+    const parsed = parseCommentRenderer(thread);
+    if ((parsed.text || parsed.author) && !seen.has(parsed.commentId)) {
+      seen.add(parsed.commentId);
+      comments.push(parsed);
+    }
+  }
+
+  // Fallback: standalone commentRenderer (some continuation responses)
+  if (!comments.length) {
+    const standaloneComments = findRenderersByKey(data, "commentRenderer");
+    for (const cr of standaloneComments) {
+      const parsed = parseCommentRenderer({ commentRenderer: cr });
+      if ((parsed.text || parsed.author) && !seen.has(parsed.commentId)) {
+        seen.add(parsed.commentId);
+        comments.push(parsed);
+      }
+    }
+  }
+
+  // Fallback: commentViewModel (newer YouTube format)
+  if (!comments.length) {
+    const viewModels = findRenderersByKey(data, "commentViewModel");
+    for (const vm of viewModels) {
+      const parsed = parseCommentRenderer({ commentViewModel: { commentViewModel: vm } });
+      if ((parsed.text || parsed.author) && !seen.has(parsed.commentId)) {
+        seen.add(parsed.commentId);
+        comments.push(parsed);
+      }
+    }
+  }
 
   const continuationRenderer = findRenderersByKey(data, "continuationItemRenderer")[0];
   const continuationToken =
     continuationRenderer?.continuationEndpoint?.continuationCommand?.token ||
-    findRenderersByKey(data, "commentRenderer")[0]?.actionButtons?.commentActionButtonsRenderer?.replyButton?.buttonRenderer?.navigationEndpoint?.continuationCommand?.token;
+    continuationRenderer?.button?.buttonRenderer?.command?.continuationCommand?.token;
 
   return { comments, continuationToken };
 }
+
 
 export function parseChannelPageResponse(data: AnyRecord): ParsedChannelPage {
   const metadata = data.metadata?.channelMetadataRenderer || {};
