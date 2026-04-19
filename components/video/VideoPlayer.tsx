@@ -6,7 +6,6 @@ import {
   Maximize,
   Minimize,
   Pause,
-  PictureInPicture2,
   Play,
   RectangleHorizontal,
   Settings2,
@@ -264,21 +263,6 @@ export default function VideoPlayer({
     document.exitFullscreen().catch(() => undefined);
   }, []);
 
-  const togglePiP = useCallback(async () => {
-    const element = playerRef.current;
-    if (!element || !document.pictureInPictureEnabled) return;
-
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-        setPip(false);
-      } else {
-        await element.requestPictureInPicture();
-        setPip(true);
-      }
-    } catch {
-      setPip(false);
-    }
   }, []);
 
   useEffect(() => {

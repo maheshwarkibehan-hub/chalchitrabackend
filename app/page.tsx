@@ -107,7 +107,7 @@ export default function HomePage() {
     setError(null);
 
     try {
-      let [homeResponse, searchResponse] = await Promise.all([
+      const [homeResponse, searchResponse] = await Promise.all([
         source.home(
           reset ? undefined : continuation,
           categoryParams[categoryAtRequestStart],

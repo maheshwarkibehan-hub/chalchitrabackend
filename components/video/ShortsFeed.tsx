@@ -124,6 +124,7 @@ export default function ShortsFeed({ initialVideoId }: ShortsFeedProps) {
     }
 
     return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadingMore, continuationToken, shorts]);
 
   return (
