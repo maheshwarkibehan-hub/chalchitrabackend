@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --yt-bg-base: #ffffff;
+  --yt-bg-elevated: #ffffff;
+  --yt-bg-hover: #f1f1f1;
+  --yt-bg-chip: #f2f2f2;
+  --yt-bg-chip-selected: #0f0f0f;
+  --yt-bg-input: #ffffff;
+  --yt-bg-sidebar: #ffffff;
+  --yt-bg-overlay: rgba(255, 255, 255, 0.6);
+  --yt-text-primary: #0f0f0f;
+  --yt-text-secondary: #606060;
+  --yt-text-disabled: #8a8a8a;
+  --yt-text-chip-selected: #ffffff;
+  --yt-accent: #ff0000;
+  --yt-like-active: #3ea6ff;
+  --yt-subscribe-bg: #0f0f0f;
+  --yt-subscribe-text: #ffffff;
+  --yt-border: #e4e4e4;
+  --yt-pill-bg: rgba(15, 15, 15, 0.78);
+  --yt-pill-bg-hover: rgba(15, 15, 15, 0.86);
+  --yt-pill-border: rgba(15, 15, 15, 0.2);
+  --yt-scrollbar: #c6c6c6;
+  --background: var(--yt-bg-base);
+  --foreground: var(--yt-text-primary);
+}
+
+[data-theme="dark"] {
+  --yt-bg-base: #0f0f0f;
+  --yt-bg-elevated: #212121;
+  --yt-bg-hover: #272727;
+  --yt-bg-chip: #272727;
+  --yt-bg-chip-selected: #ffffff;
+  --yt-bg-input: #121212;
+  --yt-bg-sidebar: #0f0f0f;
+  --yt-bg-overlay: rgba(0, 0, 0, 0.5);
+  --yt-text-primary: #f1f1f1;
+  --yt-text-secondary: #aaaaaa;
+  --yt-text-disabled: #717171;
+  --yt-text-chip-selected: #0f0f0f;
+  --yt-subscribe-bg: #ffffff;
+  --yt-subscribe-text: #0f0f0f;
+  --yt-border: #3f3f3f;
+  --yt-pill-bg: rgba(255, 255, 255, 0.1);
+  --yt-pill-bg-hover: rgba(255, 255, 255, 0.2);
+  --yt-pill-border: rgba(255, 255, 255, 0.15);
+  --yt-scrollbar: #606060;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-x: hidden;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--yt-scrollbar) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--yt-scrollbar);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .shimmer {
+    background: linear-gradient(90deg, #f2f2f2 25%, #e6e6e6 50%, #f2f2f2 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

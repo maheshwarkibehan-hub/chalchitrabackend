@@ -1,0 +1,480 @@
+Yeh raha tera complete master prompt — plain text mein, sab kuch andar hai:
+
+---
+
+MASTER PROMPT — YOUTUBE CLONE WEB APP (NEXT.JS 14)
+
+You are building a complete, fully-featured YouTube clone web application from scratch. The app is called [CHALCHITRA]. It is a privacy-first, no-login, no-ads YouTube frontend that works by talking directly to YouTube's internal Innertube API. Every single feature listed below must be implemented and working. Do not skip any feature. Build the entire project in one go, starting from the API layer, then components, then pages.
+
+---
+
+TECH STACK
+
+Framework: Next.js 14 with App Router and TypeScript. Styling: Tailwind CSS with shadcn/ui components. Video Player: Custom-built HTML5 player using MediaSource Extensions (MSE) for adaptive streaming. API Layer: All Innertube calls go through Next.js Route Handlers (server-side only — never call Innertube from the browser directly, it will CORS error). State Management: Zustand with persist middleware for localStorage sync. Animations: Framer Motion for page transitions and loading states. Icons: Lucide React. HTTP Client: Native fetch with proper error handling and retry logic.
+
+---
+
+PROJECT FOLDER STRUCTURE
+
+Create exactly this structure:
+
+app/page.tsx is the Home feed page.
+app/search/page.tsx is the Search results page.
+app/watch/[videoId]/page.tsx is the Video player page.
+app/channel/[channelId]/page.tsx is the Channel page.
+app/trending/page.tsx is the Trending videos page.
+app/history/page.tsx is the local Watch History page.
+app/shorts/page.tsx is the Shorts feed page.
+app/playlist/[playlistId]/page.tsx is the Playlist page.
+app/settings/page.tsx is the app Settings page.
+
+app/api/search/route.ts handles search requests.
+app/api/player/route.ts handles video player data.
+app/api/home/route.ts handles home feed.
+app/api/trending/route.ts handles trending feed.
+app/api/channel/route.ts handles channel pages.
+app/api/comments/route.ts handles comments.
+app/api/related/route.ts handles related videos.
+app/api/playlist/route.ts handles playlist data.
+app/api/suggestions/route.ts handles search autocomplete.
+app/api/transcript/route.ts handles subtitles and captions.
+app/api/chapters/route.ts handles video chapters.
+
+components/VideoCard.tsx is the video thumbnail card used everywhere.
+components/VideoGrid.tsx is the responsive grid of VideoCards.
+components/VideoPlayer.tsx is the full-featured custom video player.
+components/MiniPlayer.tsx is the persistent bottom mini-player.
+components/SearchBar.tsx is the search input with autocomplete dropdown.
+components/Sidebar.tsx is the left navigation sidebar.
+components/QualitySelector.tsx is the video and audio quality dropdown.
+components/CommentSection.tsx is the comments list with replies.
+components/ChannelCard.tsx is the channel info display card.
+components/ChapterMarkers.tsx is the chapter navigation on seekbar.
+components/SponsorBlockOverlay.tsx is the sponsored segment skip overlay.
+components/AmbientMode.tsx is the glowing background behind the player.
+components/Transcript.tsx is the scrollable, clickable transcript panel.
+components/ShortCard.tsx is the vertical short video card.
+components/PlaylistPanel.tsx is the playlist queue sidebar.
+components/LiveChat.tsx is the live stream chat panel.
+
+lib/innertube.ts contains all Innertube API functions.
+lib/parser.ts contains all JSON response parsers.
+lib/store.ts contains the Zustand global store.
+lib/utils.ts contains helper functions.
+lib/sponsorblock.ts contains SponsorBlock API integration.
+lib/returnyoutubedislike.ts contains Return YouTube Dislike API integration.
+lib/decipher.ts contains the stream URL signature deciphering logic.
+
+---
+
+INNERTUBE API — COMPLETE IMPLEMENTATION
+
+Base URL for all requests: https://www.youtube.com/youtubei/v1/
+
+Use this exact client context object in the body of every single Innertube request:
+
+context: {
+  client: {
+    clientName: "WEB",
+    clientVersion: "2.20240101.00.00",
+    hl: "en",
+    gl: "IN",
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    clientFormFactor: "UNKNOWN_FORM_FACTOR"
+  }
+}
+
+Implement all of these API functions in lib/innertube.ts:
+
+searchVideos(query, continuationToken) — POST to /youtubei/v1/search with body containing the context and query field. Parse sectionListRenderer > itemSectionRenderer > contents to extract videoRenderer and channelRenderer items. Support pagination via continuationToken.
+
+getVideoData(videoId) — POST to /youtubei/v1/player with body containing context, videoId, racyCheckOk: true, contentCheckOk: true. Returns videoDetails object with title, author, lengthSeconds, viewCount, shortDescription, thumbnail, isLive, isLiveDvr fields. Also returns streamingData with formats array (muxed streams) and adaptiveFormats array (separate video-only and audio-only streams). Parse all itag numbers from adaptiveFormats. Also try using ANDROID client (clientName: "ANDROID", clientVersion: "20.10.38") as fallback if WEB client streams are cipher-protected.
+
+getNextData(videoId) — POST to /youtubei/v1/next with context and videoId. Returns related videos in secondaryResults and comments in engagementPanels. Parse both.
+
+getHomeFeed(continuationToken) — POST to /youtubei/v1/browse with body containing context and browseId: "FEwhat_to_watch". Parse richGridRenderer > contents to get richItemRenderer > content > videoRenderer items.
+
+getTrending(category) — POST to /youtubei/v1/browse with browseId: "FEtrending". Support tabs for Now, Music, Gaming, Movies, News by passing the correct params field from the tab data.
+
+getChannelPage(channelId) — POST to /youtubei/v1/browse with browseId set to the channelId string. Parse header for channel name, subscriber count, banner, avatar. Parse tabs for Videos, Playlists, Community, About sections.
+
+getPlaylist(playlistId) — POST to /youtubei/v1/browse with browseId: "VL" + playlistId. Parse playlistVideoListRenderer for the video list.
+
+getTranscript(videoId) — POST to /youtubei/v1/get_transcript with context and params field constructed from videoId. Parse transcriptSegmentListRenderer for timed text segments.
+
+getSearchSuggestions(query) — GET to https://suggestqueries-clients6.youtube.com/complete/search?client=youtube&q={query}&callback=func. Parse the JSONP response to extract suggestion strings.
+
+getComments(videoId, continuationToken) — POST to /youtubei/v1/next with the correct continuation token extracted from initial video data. Parse commentThreadRenderer items for comment text, author, likeCount, replyCount.
+
+getLiveChatReplay(videoId) — POST to /youtubei/v1/live_chat/get_live_chat_replay with context and videoId for livestream chat.
+
+---
+
+STREAM HANDLING AND QUALITY SELECTION
+
+YouTube's adaptiveFormats array contains separate video-only streams and audio-only streams identified by their itag number. You must implement MSE (MediaSource Extensions) to combine them for playback.
+
+The important itag numbers to support are:
+
+For video streams: itag 137 is 1080p MP4, itag 248 is 1080p WebM, itag 136 is 720p MP4, itag 247 is 720p WebM, itag 135 is 480p MP4, itag 244 is 480p WebM, itag 134 is 360p MP4, itag 243 is 360p WebM, itag 160 is 144p MP4.
+
+For audio streams: itag 140 is 128kbps AAC MP4 (Medium quality), itag 251 is 160kbps OPUS WebM (High quality — best for music), itag 139 is 48kbps AAC MP4 (Low quality).
+
+For muxed streams (video+audio combined, simpler to implement as fallback): itag 22 is 720p MP4, itag 18 is 360p MP4. Use these as fallback if MSE fails.
+
+Stream URL deciphering: Some stream URLs in adaptiveFormats are direct URLs (signatureCipher is absent). If signatureCipher is present, you must decipher it. To decipher: fetch the YouTube player JS file URL from the initial page response, extract the signature function name and helper object from the JS, run the decipher operations on the cipher string to produce the valid URL. Implement this in lib/decipher.ts. Cache the player JS per session to avoid re-fetching.
+
+Implement the QualitySelector component as a dropdown that shows all available video quality options and separately all available audio quality options. When user changes quality, switch the MSE source buffers without interrupting playback — seek to currentTime after switching.
+
+---
+
+VIDEO PLAYER — ALL FEATURES
+
+Build VideoPlayer.tsx as a fully custom player. Do not use any third-party player library. Use HTML5 video element directly with MSE.
+
+Controls to implement:
+
+Play and Pause button with smooth icon transition animation.
+
+Seekbar showing buffered progress in gray and played progress in red (#ff0000). Show chapter markers as white tick marks on the seekbar when chapters are available. On hover over seekbar show a thumbnail preview (use storyboard images from player response if available, otherwise just show timestamp tooltip). Clicking a chapter marker on the seekbar jumps to that chapter.
+
+Volume control with a slider. Clicking the speaker icon toggles mute. Scroll wheel on player area adjusts volume. Remember volume level in localStorage.
+
+Playback speed selector showing options: 0.25x, 0.5x, 0.75x, 1x (Normal), 1.25x, 1.5x, 1.75x, 2x, 3x, 4x.
+
+Quality selector button opening the QualitySelector component dropdown.
+
+Stable Volume toggle — when enabled, normalize audio levels to prevent sudden loud jumps. Implement using Web Audio API GainNode with a DynamicsCompressorNode. Connect the video element audio output through the compressor before output.
+
+Fullscreen button using the Fullscreen API (element.requestFullscreen()).
+
+Picture-in-Picture button using document.pictureInPictureEnabled check, then video.requestPictureInPicture(). Show a button in player controls. When PiP is active, show a "Playing in Picture-in-Picture" overlay on the main player area.
+
+Theater mode button — when active, expand the player to full viewport width with taller height, push related videos and comments below the player instead of beside it.
+
+Mini player — when user navigates away from the watch page while video is playing, automatically transition the video into a fixed bottom-right mini player that persists across route changes. Mini player shows thumbnail, video title, channel name, play/pause button, and close button. Clicking the mini player title navigates back to the watch page.
+
+Keyboard shortcuts: Space toggles play/pause, F toggles fullscreen, M toggles mute, T toggles theater mode, I toggles mini player, left arrow seeks back 5 seconds, right arrow seeks forward 5 seconds, J seeks back 10 seconds, L seeks forward 10 seconds, up arrow increases volume by 5%, down arrow decreases volume by 5%, comma decreases playback speed, period increases playback speed, C toggles captions, numbers 0-9 seek to 0-90% of video.
+
+Autoplay — after current video ends, automatically play the first related video after a 5 second countdown that user can cancel.
+
+Loop mode — toggle button to loop the current video. Also implement A-B loop where user can set start point and end point for a segment to loop.
+
+Ambient Mode — when enabled and player is in dark mode, extract the dominant color from the video thumbnail and render a soft glowing blurred background around the player using that color. Implement AmbientMode.tsx using a canvas element and getImageData to sample the thumbnail colors.
+
+Chapter Navigation panel — show a collapsible list of chapters with timestamps below the player. Clicking a chapter jumps to that time. Highlight the currently playing chapter.
+
+Captions/Subtitles — fetch transcript from /api/transcript, display as subtitles overlaid on the video. Allow toggling on/off. Allow selecting language if multiple caption tracks exist in the player response.
+
+SponsorBlock integration — on video load, call the SponsorBlock API at https://sponsor.ajay.app/api/skipSegments?videoID={videoId} to get community-submitted sponsored segment timestamps. Implement in lib/sponsorblock.ts. Show a yellow marker on the seekbar for each sponsored segment. When playback enters a sponsored segment, show a "Skip Sponsor" button overlay. When segment is skipped, show a brief "Skipped Sponsored Segment" toast. Support all SponsorBlock categories: sponsor, intro, outro, interaction, selfpromo, music_offtopic, preview, filler.
+
+---
+
+ALL PAGE FEATURES
+
+Home page: Show video grid fetched from home feed. Show category filter chips horizontally scrollable at top: All, Music, Gaming, News, Sports, Podcasts, Live, Recently Uploaded, Watched, New To You. Clicking a chip filters the feed. Implement infinite scroll using Intersection Observer — load more videos when user scrolls to bottom. Show skeleton loading cards while fetching.
+
+Search page: SearchBar with debounced autocomplete showing up to 10 suggestions in a dropdown. On submit show results grid. Show filter chips: Upload Date (any, last hour, today, this week, this month, this year), Duration (short under 4 min, medium 4-20 min, long over 20 min), Type (video, channel, playlist, movie, live), Sort by (relevance, upload date, view count, rating). Support infinite scroll with continuation tokens.
+
+Watch page: Desktop layout is 70% player on left and 30% sidebar on right. Mobile layout is player then video info then comments then related videos all stacked vertically. Show below the player: video title, view count, upload date (exact date not "2 years ago"), channel name with avatar and subscriber count and Subscribe button, like count, dislike count fetched from Return YouTube Dislike API. Show description with expand/collapse, auto-linking URLs and timestamps in description, hashtags shown at top of description. Show chapters list. Show comments section with sorting options (Top Comments, Newest First). Show comment replies expandable inline. Show related videos in sidebar.
+
+Return YouTube Dislike: On every video page, call https://returnyoutubedislike.com/api/getVotes?videoId={videoId} and show the dislike count next to the like count. Implement in lib/returnyoutubedislike.ts.
+
+Channel page: Show channel banner image, avatar, name, subscriber count, total view count, join date. Show tabs for Videos, Shorts, Live, Playlists, Community, About. Videos tab shows video grid with sort options. Playlists tab shows playlist cards. About tab shows full channel description and links.
+
+Trending page: Show trending videos with a tab bar for categories: Now, Music, Gaming, Movies, News.
+
+History page: Show watch history stored in localStorage, most recent first. Allow clearing individual items or clearing all history. Show search history separately. Show a toggle to pause history recording.
+
+Playlist page: Show playlist title, description, total video count, total duration. Show video list in order. Allow playing all (starts from first video and autoplays through the list). Show a playlist queue panel on the watch page when watching a playlist.
+
+Shorts page: Vertical scrolling feed of YouTube Shorts. Each Short plays automatically when scrolled into view and pauses when scrolled out. Show like count, comment count, share button, channel name overlay.
+
+Settings page: Allow configuring default video quality (Auto, 144p, 360p, 480p, 720p, 1080p), default audio quality (Low, Medium, High), default playback speed, stable volume on/off by default, autoplay on/off, theme (dark/light/system), SponsorBlock on/off and which categories to skip, captions on/off by default, content language preference. Save all settings to localStorage via Zustand persist.
+
+---
+
+GLOBAL FEATURES
+
+Dark mode and light mode toggle in the top navbar with system preference detection on first load. Persist theme choice in localStorage.
+
+Search history — save last 20 searches in localStorage, show in autocomplete dropdown above suggestions.
+
+Watch history — save every video watched with timestamp to localStorage. Use this to show "Watched" indicator (a progress bar at the bottom of VideoCard thumbnails showing how much of the video was watched). Cap history at 200 items.
+
+Watch progress sync — save currentTime for each videoId to localStorage every 5 seconds while playing. When same video is opened again, ask user "Resume from where you left off?" and seek to saved position.
+
+Playlists — allow user to create local playlists stored in localStorage. Add a Save button on every video that opens a dropdown to add to existing local playlist or create new one.
+
+Share button — on every video page, show a share button that copies the watch URL to clipboard and shows a "Copied!" toast.
+
+---
+
+DESIGN SYSTEM
+
+Background color in dark mode: #0f0f0f. Surface cards in dark mode: #1a1a1a. Text primary in dark mode: #f1f1f1. Text secondary in dark mode: #aaaaaa. Accent color (progress bar, active states, hover): #ff0000. Font family: Inter loaded from Google Fonts. Border radius on cards: 12px. Border radius on buttons: 8px. VideoCard thumbnail aspect ratio: 16:9 with rounded corners. Hover on VideoCard: slight scale-up animation (scale 1.02) with shadow. Skeleton loaders use animated shimmer effect in #2a2a2a. All page transitions use Framer Motion fadeIn animation (opacity 0 to 1, 200ms).
+
+VideoCard component must show: thumbnail with duration badge in bottom right corner, channel avatar on the left, video title (max 2 lines with text-overflow ellipsis), channel name, view count formatted (1.2M views), upload date (relative format like "2 days ago"), and a watch progress bar at the bottom of the thumbnail if the video has been partially watched.
+
+---
+
+FUTURE PWA CONVERSION NOTES — DO NOT IMPLEMENT NOW BUT STRUCTURE CODE FOR THESE
+
+When PWA conversion is done in future, next-pwa package will be used. The manifest.json will go in /public with standalone display mode, #0f0f0f background, and icon sizes 192x192 and 512x512. All API calls are already server-side so they will work in PWA context without changes. The Zustand persist store will already be compatible with PWA localStorage. Service worker from next-pwa will handle offline caching of assets. No restructuring of the codebase will be needed — simply install next-pwa and add manifest.json. Ensure all images use next/image with proper sizes for cache-friendliness.
+
+---
+
+SETUP COMMANDS TO RUN FIRST
+
+npx create-next-app@latest [app-name] --typescript --tailwind --app --src-dir
+cd [app-name]
+npm install zustand framer-motion lucide-react
+npx shadcn@latest init
+npx shadcn@latest add button card skeleton sheet dropdown-menu tabs badge toast avatar scroll-area
+npm install @types/node
+
+---
+
+BUILD ORDER
+
+Follow this exact order:
+First build lib/innertube.ts with all API functions.
+Then build lib/parser.ts with all response parsers.
+Then build lib/store.ts with the Zustand store.
+Then build lib/sponsorblock.ts and lib/returnyoutubedislike.ts.
+Then build all Route Handlers in app/api/.
+Then build all base components starting with VideoCard, VideoGrid, SearchBar, Sidebar.
+Then build VideoPlayer.tsx with all controls.
+Then build MiniPlayer.tsx.
+Then assemble all pages starting with Home, then Watch, then Search, then Channel, then rest.
+Finally build Settings page and connect all preferences to the store.
+
+---
+
+Do not ask any clarifying questions. Do not skip any feature. Do not stub any function with TODO. Build everything completely and make it fully functional. Start immediately with lib/innertube.ts. You are building a complete YouTube clone web application called [APP NAME]. It must look and feel exactly like YouTube's April 2026 design — dark black theme, Material Design 3, pill-shaped translucent player controls, and all modern UI patterns. This is a privacy-first, no-login, no-ads YouTube frontend using YouTube's internal Innertube API. Build the entire project completely without skipping any feature or leaving any TODO stub.
+APRIL 2026 YOUTUBE DESIGN SYSTEM — IMPLEMENT EXACTLY
+This is the most important section. Every color, radius, and spacing must match YouTube's current design.
+Color tokens — put these in your Tailwind config and as CSS variables in globals.css:
+--yt-bg-base: #0f0f0f — This is the main page background. Pure near-black, not pure #000000.
+--yt-bg-elevated: #212121 — Card and surface background, used for VideoCards and dropdowns.
+--yt-bg-hover: #272727 — Background on hover state for any clickable surface.
+--yt-bg-chip: #272727 — Background for category filter chips and unselected tabs.
+--yt-bg-chip-selected: #ffffff — Background for selected/active chip.
+--yt-bg-input: #121212 — Search bar input background.
+--yt-bg-sidebar: #0f0f0f — Left sidebar background, same as base.
+--yt-bg-overlay: rgba(0,0,0,0.5) — Semi-transparent overlay for modals and dropdowns.
+--yt-text-primary: #f1f1f1 — Main body text, video titles.
+--yt-text-secondary: #aaaaaa — Meta text like view counts, dates, channel names under titles.
+--yt-text-disabled: #717171 — Disabled or placeholder text.
+--yt-text-chip-selected: #0f0f0f — Text color on selected white chip.
+--yt-accent: #ff0000 — Red accent, used for progress bar fill and active indicators.
+--yt-like-active: #3ea6ff — Blue color for the like button when liked (YouTube's current style).
+--yt-subscribe-bg: #ffffff — Subscribe button background is now white not red in 2025.
+--yt-subscribe-text: #0f0f0f — Subscribe button text is black on white.
+--yt-border: #3f3f3f — Border color for dividers and input outlines.
+--yt-pill-bg: rgba(255,255,255,0.1) — Translucent white background for player control pills.
+--yt-pill-bg-hover: rgba(255,255,255,0.2) — Slightly more opaque on hover.
+--yt-pill-border: rgba(255,255,255,0.15) — Subtle border on pill buttons when hovered.
+--yt-scrollbar: #606060 — Scrollbar thumb color.
+Typography — use Roboto font (same as YouTube), load from Google Fonts. Fallback is system-ui. Body text size 14px. Video titles 14px medium weight. Channel names 13px in secondary color. View counts 13px in secondary color. Page headings 20px medium weight. Search input 16px. Chip labels 14px medium weight.
+Spacing and radius — use 8px as base unit. VideoCard border radius 12px on thumbnails. Chip border radius 999px (fully rounded pill). Buttons border radius 999px. Input border radius 999px. Dropdown menus border radius 12px. Avatar border radius 50% (full circle). Cards have no border — they are borderless on the dark background.
+Scrollbar — custom scrollbar with transparent track and #606060 thumb, 8px wide, only visible on hover of scrollable areas. Use CSS ::-webkit-scrollbar rules.
+TYPOGRAPHY AND ICONOGRAPHY
+Use Roboto loaded via next/font/google. Do not use Inter — YouTube uses Roboto. Weight variants needed: 400 (regular), 500 (medium). Icon library: use lucide-react for all icons. For the YouTube logo wordmark in the navbar, render the red rectangle with white play triangle using an inline SVG, then the word "YouTube" next to it in white. Do not use an image for the logo.
+PROJECT STRUCTURE
+Create this exact folder structure:
+app/page.tsx — Home feed
+app/search/page.tsx — Search results
+app/watch/[videoId]/page.tsx — Video player page
+app/channel/[channelId]/page.tsx — Channel page
+app/trending/page.tsx — Trending
+app/history/page.tsx — Watch history
+app/shorts/page.tsx — Shorts vertical feed
+app/playlist/[playlistId]/page.tsx — Playlist view
+app/settings/page.tsx — Settings
+app/api/search/route.ts
+app/api/player/route.ts
+app/api/home/route.ts
+app/api/trending/route.ts
+app/api/channel/route.ts
+app/api/comments/route.ts
+app/api/related/route.ts
+app/api/playlist/route.ts
+app/api/suggestions/route.ts
+app/api/transcript/route.ts
+components/layout/Navbar.tsx
+components/layout/Sidebar.tsx
+components/layout/MiniSidebar.tsx
+components/video/VideoCard.tsx
+components/video/VideoGrid.tsx
+components/video/VideoPlayer.tsx
+components/video/MiniPlayer.tsx
+components/video/QualitySelector.tsx
+components/video/ChapterMarkers.tsx
+components/video/AmbientMode.tsx
+components/video/Transcript.tsx
+components/video/SponsorBlock.tsx
+components/video/PlaylistPanel.tsx
+components/video/LiveChat.tsx
+components/ui/SearchBar.tsx
+components/ui/CategoryChips.tsx
+components/ui/CommentSection.tsx
+components/ui/ChannelCard.tsx
+components/ui/ShortCard.tsx
+components/ui/SkeletonCard.tsx
+components/ui/Toast.tsx
+lib/innertube.ts
+lib/parser.ts
+lib/store.ts
+lib/sponsorblock.ts
+lib/returnyoutubedislike.ts
+lib/decipher.ts
+lib/utils.ts
+NAVBAR — EXACT YOUTUBE 2026 STYLE
+Height: 56px. Background: #0f0f0f with a very subtle bottom border of 1px solid #3f3f3f. Position: fixed top-0, z-index 100. Full viewport width. Padding: 0 16px.
+Left section: Hamburger menu icon (three horizontal lines) that toggles sidebar expansion. Then the YouTube logo SVG. Gap between them: 16px.
+Center section: Search bar that expands to fill center space. The search input has background #121212, border 1px solid #3f3f3f, border-radius 999px, height 40px, padding 0 16px, font-size 16px, text color #f1f1f1. On focus the border color changes to #3ea6ff (YouTube's blue focus ring). To the right of the input is a separate pill-shaped search submit button with background #272727, width 64px, height 40px, border-radius 999px, containing a search icon. To the left of the input is a mic icon button in the same pill style for voice search (UI only, no actual voice functionality needed).
+Right section: Three icon buttons — notifications bell, settings gear, and a circular user avatar placeholder (gray circle with person icon, since there is no login). Each icon button is 40px by 40px, border-radius 50%, hover background #272727.
+SIDEBAR — EXACTLY LIKE YOUTUBE 2026
+Two states: mini sidebar (collapsed, icons only) and full sidebar (expanded, icons plus labels). Default on desktop: full sidebar shown. Default on mobile: hidden, slides in as overlay on hamburger click.
+Mini sidebar width: 72px. Full sidebar width: 240px. Background: #0f0f0f. Position: fixed left-0, below navbar, full height. Overflow-y auto with hidden scrollbar.
+Navigation items in order: Home (house icon), Shorts (play-short icon), Subscriptions (playlist icon) — these three are always at the top and shown in both sidebar states. Below these is a thin divider line (1px, #3f3f3f).
+Then: History (clock icon), Playlists (folder icon), Watch Later (clock-plus icon), Liked Videos (thumbs-up icon). Below these another divider. Then: Trending (fire icon), Music (musical note icon), Gaming (gamepad icon), News (newspaper icon), Sports (trophy icon), Podcasts (microphone icon). Below another divider. Then: Settings (gear icon), Help (question mark icon).
+Each nav item: height 40px, border-radius 10px, padding 0 12px, hover background #272727, active/selected background #272727 with white text. In full sidebar show icon (20px) then label (14px Roboto) with 16px gap. In mini sidebar show only icon centered with a small label below it in 10px font. Active item has white text. Inactive items have secondary text color #aaaaaa.
+VIDEO CARD — EXACT YOUTUBE 2026 STYLE
+VideoCard must look exactly like YouTube's current card layout. Do not add card backgrounds — the card is transparent on the page background.
+Thumbnail container: 16:9 aspect ratio, border-radius 12px, overflow hidden. On hover: scale to 1.02 with 200ms ease transition. Thumbnail is a next/image with sizes prop set appropriately. In the bottom-right corner of the thumbnail, show duration badge — small pill shape, background rgba(0,0,0,0.8), text white, font-size 12px, padding 2px 6px, border-radius 4px. If video is a live stream, show a red "LIVE" badge instead of duration.
+If the video has been partially watched (stored in localStorage history), show a red progress bar at the very bottom of the thumbnail — 3px height, color #ff0000, width proportional to watch percentage.
+Below the thumbnail: a row with channel avatar on the left (36px circle, border-radius 50%) and video info on the right. Video title is 14px Roboto medium, color #f1f1f1, max 2 lines with -webkit-line-clamp: 2. Channel name is 13px color #aaaaaa, margin-top 4px. Then view count and relative upload date on the same line as channel name, separated by a dot, all 13px #aaaaaa.
+On hover over the card, show a three-dot menu icon (vertical ellipsis) in the top-right corner of the thumbnail. Clicking it shows a dropdown with options: Add to queue, Save to playlist, Save to Watch Later, Download, Share, Not interested.
+Spacing between cards in the grid: 16px horizontal gap, 16px vertical gap.
+VIDEO GRID — RESPONSIVE COLUMNS
+Use CSS grid. Columns: 1 column on mobile (below 640px), 2 columns on small tablet (640px to 1024px), 3 columns on medium screens (1024px to 1280px), 4 columns on large screens (1280px to 1536px), 5 columns on extra large (above 1536px). When the full sidebar is visible (240px wide) subtract that from the available width calculation.
+CATEGORY CHIPS — BELOW NAVBAR ON HOME PAGE
+A horizontally scrollable row of pill-shaped chips that filter the home feed. Chips have background #272727, border-radius 999px, height 32px, padding 0 12px, font-size 14px, color #f1f1f1. The active chip has background #ffffff and text color #0f0f0f. Hover state on inactive chips: background #3f3f3f. No wrapping — horizontal scroll with hidden scrollbar. Show left and right arrow buttons at the edges to scroll the chip row (only when overflow exists).
+Categories in order: All, Music, Gaming, News, Live, Mixes, Computer programming, Recently uploaded, Watched, New to you, Podcasts, Sports, Fashion, Cooking, Hindi, Bollywood. The active chip should update the home feed by passing a filter param to the Innertube browse request.
+SEARCH BAR WITH AUTOCOMPLETE
+As user types, debounce 300ms then call /api/suggestions. Show a dropdown below the search bar with background #212121, border-radius 12px, box-shadow, max 10 suggestions. Each suggestion row: search icon on left, suggestion text, and a northeast arrow icon on right (to fill the search bar with that text without submitting). Recent searches stored in localStorage show at top with a clock icon and a close button to remove individual history items.
+WATCH PAGE LAYOUT — EXACT YOUTUBE 2026
+Desktop layout (above 1024px): Left column is 70% width containing the video player, then video info section, then comments section. Right column is 30% width (min 400px, max 402px) containing related videos list. Gap between columns: 24px. The right column is sticky on desktop — it scrolls independently.
+Mobile layout (below 1024px): Full width video player, then video info, then the related videos list, then comments section — all stacked vertically.
+Video info section below player contains, in order:
+First row: Video title in 20px Roboto medium color #f1f1f1, expandable with a "...more" link if it overflows 2 lines.
+Second row: View count (exact number formatted) and exact upload date (not relative), color #aaaaaa, 14px.
+Third row: A flex row containing channel avatar (40px circle) then channel name and subscriber count stacked, then a white Subscribe button (background #ffffff, text #0f0f0f, height 36px, border-radius 999px, padding 0 16px, font-size 14px, font-weight 500). To the right of this row are the action buttons.
+Action buttons in 2026 style: These are pill-shaped button groups. Like and Dislike share one pill capsule (background #272727, border-radius 999px, height 36px). Inside the pill: thumbs-up icon, like count number, a thin vertical divider, then thumbs-down icon, dislike count from Return YouTube Dislike API. When like is active the thumbs-up turns #3ea6ff. Then separate pill buttons for: Share (share icon + "Share" label), Download (download icon + "Download" label), Save (bookmark icon + "Save" label). All pill buttons same style: background #272727, border-radius 999px, height 36px, padding 0 12px, gap 6px, hover background #3f3f3f.
+Description section: collapsed by default showing 3 lines, expand button shows full description. In the description, auto-detect timestamps (like 0:00, 1:23, 10:45) and turn them into clickable links that seek the player to that time. Auto-detect URLs and make them clickable. Hashtags shown as clickable links. Channel join date, total views, and a "Report" link at the bottom of description.
+Chapters section: if the video has chapters (detected from description or nextData), show a scrollable horizontal list of chapter cards with timestamp + chapter name + thumbnail. Clicking jumps to that chapter.
+VIDEO PLAYER — APRIL 2026 PILL-SHAPED DESIGN
+This is the most important component. The player must look exactly like YouTube's October 2025 redesigned player that has been rolling out globally.
+Player container: background #000000, aspect ratio 16:9, border-radius 12px on the watch page, 0px when fullscreen. Overflow hidden.
+Controls overlay: appears on hover and fades out after 3 seconds of no mouse movement. When controls are hidden the cursor is also hidden (cursor: none). The controls overlay has a gradient at the bottom: linear-gradient(transparent, rgba(0,0,0,0.7)) for the bottom controls area and a lighter gradient at the top.
+BOTTOM CONTROLS — PILL DESIGN:
+The seekbar is a full-width red progress bar above the control buttons. Height 3px normally, expands to 5px on hover. Track background #606060, buffered progress #909090, played progress #ff0000. The thumb handle (draggable circle) is 12px red circle, only visible on hover/drag. Chapter markers show as small white tick marks on the seekbar. On seekbar hover show a timestamp tooltip. Implement precise seeking: when user drags the seekbar, if they drag upward while holding, show a strip of thumbnail previews above the seekbar for fine-grained navigation.
+Below the seekbar, two groups of pill-shaped controls:
+Left pill group (one continuous pill capsule with background rgba(255,255,255,0.1), backdrop-filter blur(4px), border-radius 999px, padding 4px 8px, gap 4px):
+Play/Pause button (largest icon, 36px)
+Skip to next button (skip-forward icon)
+Current time / total duration text (14px white, like "1:23 / 4:32")
+Volume button (speaker icon), clicking toggles mute. On hover expand to show a vertical volume slider (this is YouTube's new volume design — vertical not horizontal). The volume button and slider share their own mini pill.
+Chapter name text showing current chapter if chapters exist.
+Right pill group (same pill styling, grouped on right side):
+Stable Volume toggle icon (sound wave with checkmark, tooltip says "Stable volume")
+Captions/Subtitles button (CC icon)
+Settings gear button — clicking opens a settings panel with options: Quality (shows all available video quality options), Playback speed, Annotations, Audio track.
+Theater mode button (wide rectangle icon)
+Fullscreen button (expand icon)
+Action buttons on player (new in 2025 — shows in fullscreen mode and on mobile):
+In fullscreen, show a row of action buttons overlaid on the video: Like count, Dislike, Share, Save. These appear as translucent pill buttons so user can interact without leaving fullscreen.
+Double-tap to seek: on mobile, double-tap the left half of the player to seek back 10 seconds, double-tap the right half to seek forward 10 seconds. Show an animated ripple with "+10" or "-10" text on the respective side.
+Keyboard shortcuts: Space or K for play/pause, F for fullscreen, T for theater mode, M for mute, I for miniplayer, J for -10s, L for +10s, left arrow for -5s, right arrow for +5s, up arrow volume up, down arrow volume down, comma to slow down, period to speed up, C for captions, 0-9 to seek to percentage.
+Ambient Mode: when enabled, extract dominant colors from the video thumbnail using a hidden canvas with getImageData, render a blurred radial gradient with those colors behind and around the player div. The glow fades into the #0f0f0f page background. Brightness 0.6 opacity so it's subtle not overwhelming.
+Autoplay: after video ends, show a 5-second countdown overlay with the next video thumbnail, title, and a Cancel button. If not cancelled, navigate to that video.
+PLAYER CONTROLS — STABLE VOLUME IMPLEMENTATION
+Implement stable volume using Web Audio API. Create an AudioContext, connect the video element as a MediaElementSourceNode, pass it through a DynamicsCompressorNode with threshold -24, knee 30, ratio 12, attack 0.003, release 0.25, then connect to the AudioContext destination. When stable volume is enabled, route audio through this chain. When disabled, connect video directly to destination.
+MINI PLAYER
+When user is on the watch page and navigates to another page while video is playing, the VideoPlayer transitions into a MiniPlayer component. This is a fixed div in the bottom-right corner of the viewport. Size: 320px wide, 180px tall (16:9) for the video area, plus a 56px info bar below. Total border-radius 12px. Box shadow: 0 8px 32px rgba(0,0,0,0.6). Background #212121.
+The video element is moved into the mini player using React portal — same element, same playback position, no interruption. Info bar shows video title (truncated, 13px white), channel name (12px gray), play/pause icon button, and close/X button. Clicking the video area or title navigates back to /watch/[videoId]. Dragging the mini player is optional but nice to have.
+COMMENTS SECTION — 2026 THREADED STYLE
+Sort options: Top Comments, Newest First. Show a comment count header like "1.2K Comments".
+Each comment shows: channel avatar (40px circle), channel name (13px white medium), comment timestamp (13px gray), comment text (14px white), like count (13px gray with thumbs-up icon), reply count button ("N replies" in blue #3ea6ff), a three-dot options menu.
+Replies: When user clicks "N replies", expand an indented reply thread below the comment. In 2026, YouTube added a red vertical line on the left connecting the commenter avatar to their replies. Implement this as a 2px wide, red (#ff0000) vertical line using a CSS border-left or a pseudo-element, running from the parent avatar down through all replies. This is the new 2026 threading design.
+Load more comments on scroll using continuation tokens from the Innertube next endpoint.
+SHORTS PAGE
+Full-height vertical scroll feed. Each Short takes up 100vh height. When a Short scrolls into viewport (use Intersection Observer), auto-play it muted. When it scrolls out, pause and reset. Swipe up/down (touch events) or mouse wheel scrolls to next/previous short. On the right side: like button with count, dislike, comment button, share button, remix button — all vertically stacked pill buttons with translucent backgrounds.
+SKELETON LOADING
+All loading states must use skeleton screens not spinners. Skeleton cards have the exact same dimensions as real VideoCards. The shimmer animation is a gradient sweep: background linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%), background-size 200% 100%, animated with a keyframe that moves the background-position from 200% to -200% over 1.5s infinite. Apply to thumbnail area (16:9), title area (two rounded rectangles), and channel name area (one thinner rectangle).
+INNERTUBE API — COMPLETE IMPLEMENTATION
+All Innertube calls must be server-side in Next.js Route Handlers. Never call from the browser. Base URL is https://www.youtube.com/youtubei/v1/.
+Client context to use in every request body:
+context.client.clientName = "WEB"
+context.client.clientVersion = "2.20240101.00.00"
+context.client.hl = "en"
+context.client.gl = "IN"
+context.client.userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+If WEB client returns cipher-protected stream URLs, retry the same request using ANDROID client with clientName "ANDROID" and clientVersion "20.10.38" — ANDROID client returns direct unciphered stream URLs in most cases.
+Implement all these functions in lib/innertube.ts:
+searchVideos(query, continuationToken) — POST /youtubei/v1/search, body has context and query. Parse sectionListRenderer deeply to extract all videoRenderer and channelRenderer items. Return array of {videoId, title, thumbnails, duration, viewCount, channelName, channelId, channelAvatar, publishedTime, description}.
+getVideoPlayer(videoId) — POST /youtubei/v1/player, body has context, videoId, racyCheckOk true, contentCheckOk true. Extract videoDetails and streamingData. From streamingData.adaptiveFormats, group streams by whether mimeType includes "video" or "audio". Extract itag, mimeType, quality, bitrate, url, audioQuality, width, height for each stream. Also extract streamingData.formats (muxed) as fallback. Return all of this structured data.
+getNextData(videoId) — POST /youtubei/v1/next, body has context and videoId. Parse secondaryResults for related videos. Parse engagementPanels for chapters (look for engagementPanelSectionListRenderer with panelIdentifier containing "chapters"). Parse chapters from macroMarkersListItemRenderer items — each has title, timeRangeStartMillis. Parse comments from commentSectionRenderer but main comments load via continuation. Return {relatedVideos, chapters, commentsContinuationToken}.
+getHomeFeed(continuationToken) — POST /youtubei/v1/browse, browseId "FEwhat_to_watch". Parse richGridRenderer contents for richItemRenderer items containing videoRenderer.
+getTrending() — POST /youtubei/v1/browse, browseId "FEtrending". Parse expandedShelfContentsRenderer contents.
+getChannelPage(channelId) — POST /youtubei/v1/browse, browseId is the channelId string. Extract channelMetadataRenderer for name, description, avatar. Extract c4TabbedHeaderRenderer for subscriber count, banner. Parse tabs array for Videos tab content.
+getPlaylist(playlistId) — POST /youtubei/v1/browse, browseId "VL" + playlistId. Parse playlistVideoListRenderer for video list with playlistIndex included.
+getComments(continuationToken) — POST /youtubei/v1/next, body has context and continuation token in the continuation field. Parse commentThreadRenderer items. Each has comment.runs for text, authorText for name, authorThumbnail for avatar, voteCount for likes, replyCount.
+getTranscript(videoId) — POST /youtubei/v1/get_transcript, body has context and params field. Params is constructed by base64 encoding a protobuf with the videoId. Parse transcriptSegmentRenderer items for startMs and snippet text.
+getSearchSuggestions(query) — GET to https://suggestqueries-clients6.youtube.com/complete/search with params client=youtube, q=query, callback=? and parse the JSONP array.
+THIRD PARTY API INTEGRATIONS
+SponsorBlock: On video load, fetch https://sponsor.ajay.app/api/skipSegments?videoID={videoId}&categories=["sponsor","intro","outro","interaction","selfpromo","music_offtopic","preview","filler"]. Store returned segments array of {startTime, endTime, category}. During playback, check currentTime against segments every 500ms. When entered a segment, show a yellow "Skip Sponsor" button overlay bottom-right of player (pill style, background #272727, text #f1f1f1, 36px height, border-radius 999px). Show colored marks on seekbar for each segment — sponsors in green, intros in teal, outros in blue, interactions in magenta, selfpromo in yellow. When segment is auto-skipped (if auto-skip is on in settings), show a brief "Skipped sponsored segment" toast bottom-left.
+Return YouTube Dislike: Fetch https://returnyoutubedislike.com/api/getVotes?videoId={videoId} on video page load. Show the returned dislike count in the action buttons row. Format the number same way as like count (1.2K, 4.5M etc).
+LOCAL STORAGE FEATURES — ZUSTAND PERSIST STORE
+Implement in lib/store.ts using zustand with persist middleware writing to localStorage under the key "yt-clone-store".
+Store shape:
+watchHistory — array of {videoId, title, channelName, thumbnail, duration, watchedAt, progressPercent, progressSeconds}. Max 200 items. When same videoId is re-watched, update the existing entry.
+searchHistory — array of strings, max 20. Most recent first.
+localPlaylists — array of {id, name, createdAt, videos[]}. User-created playlists.
+watchLaterVideos — array of video objects.
+likedVideos — array of video objects.
+preferences — object with defaultVideoQuality (string), defaultAudioQuality (string), defaultPlaybackSpeed (number), stableVolumeEnabled (boolean), autoplayEnabled (boolean), sponsorBlockEnabled (boolean), sponsorBlockCategories (array of strings), captionsEnabled (boolean), ambientModeEnabled (boolean), theme (string always "dark" for now).
+currentlyPlaying — {videoId, currentTime, isPlaying, volume, isMuted, playbackRate, quality} — updates every 5 seconds while playing.
+miniPlayerActive — boolean.
+sidebarExpanded — boolean.
+SETTINGS PAGE
+Show sections: Playback (default quality, default speed, stable volume toggle, autoplay toggle), Privacy (SponsorBlock on/off, which categories to block), Appearance (theme toggle, ambient mode toggle), History (clear watch history button, clear search history button, pause history toggle), About (app name, version, link to GitHub if open source). All settings read from and write to Zustand store. Changes take effect immediately everywhere in the app without page refresh.
+ANIMATIONS AND TRANSITIONS
+All page transitions: use Framer Motion AnimatePresence. Each page fades in with opacity 0 to 1 and y from 8px to 0px, duration 0.15s ease-out.
+Like button: when user clicks like, play a short scale animation (scale 1 to 1.3 back to 1, 300ms) and change color to #3ea6ff. Show a small floating "+1" text that floats up and fades out.
+Subscribe button: when clicked, change from white "Subscribe" to dark "Subscribed" with a bell icon, with a brief bounce animation.
+VideoCard hover: scale 1.02, transition 200ms ease.
+Quality switch in player: crossfade transition between quality levels — before switching, briefly show a loading spinner overlay on the player.
+Chip selection: when clicking a chip, animate background color change 150ms.
+FUTURE PWA CONVERSION — STRUCTURE READY, NOT IMPLEMENTED NOW
+Code is already structured for easy PWA conversion. When ready: install next-pwa, add manifest.json to /public with name, short_name, start_url "/", display "standalone", background_color "#0f0f0f", theme_color "#0f0f0f", icons array for 192 and 512 sizes. Add meta tags to layout.tsx for manifest, theme-color, apple-mobile-web-app-capable. All API calls are server-side so no CORS issues in PWA. All state is already in localStorage via Zustand persist. No restructuring needed.
+SETUP COMMANDS
+Run these before building:
+npx create-next-app@latest [app-name] --typescript --tailwind --app
+cd [app-name]
+npm install zustand framer-motion lucide-react
+npx shadcn@latest init
+npx shadcn@latest add button card skeleton sheet dropdown-menu tabs badge scroll-area separator avatar tooltip
+npm install next-themes
+Add to tailwind.config.ts the custom colors from the color tokens section above. Add to globals.css all the CSS custom properties.
+BUILD ORDER — FOLLOW EXACTLY
+Step 1: globals.css with all CSS variables and Roboto font import and custom scrollbar.
+Step 2: tailwind.config.ts with color extensions mapping to the CSS variables.
+Step 3: lib/utils.ts with number formatters (formatViewCount, formatDuration, formatRelativeDate, formatExactDate).
+Step 4: lib/innertube.ts with all API functions.
+Step 5: lib/parser.ts with all response parsers.
+Step 6: lib/store.ts with Zustand store.
+Step 7: lib/sponsorblock.ts and lib/returnyoutubedislike.ts.
+Step 8: All Route Handlers in app/api/.
+Step 9: components/layout/Navbar.tsx and Sidebar.tsx.
+Step 10: components/video/VideoCard.tsx and VideoGrid.tsx.
+Step 11: components/ui/CategoryChips.tsx, SearchBar.tsx, SkeletonCard.tsx.
+Step 12: components/video/VideoPlayer.tsx with all controls.
+Step 13: components/video/MiniPlayer.tsx.
+Step 14: components/ui/CommentSection.tsx.
+Step 15: All remaining components.
+Step 16: All pages in order: Home, Watch, Search, Channel, Trending, History, Shorts, Playlist, Settings.
+Step 17: app/layout.tsx with Navbar, Sidebar, MiniPlayer always rendered.
+Do not ask any questions. Do not stub anything. Build everything completely. Start with Step 1 immediately.
